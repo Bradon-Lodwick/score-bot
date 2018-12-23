@@ -1,0 +1,16 @@
+# Remember to change your path options in here, as well as create the directory that you use for the storage path
+systemLog:
+  destination: file
+  # TODO change the path to your desired log file location
+  path: "C:\\Users\\100585662\\Documents\\score-bot\\mongodb\\score_bot.log"
+  logAppend: true
+storage:
+  # TODO change the path to your desired file storage location, and create the folder that you are pointing to
+  dbPath: "C:\\Users\\100585662\\Documents\\score-bot\\mongodb\\score_data"
+  journal:
+    enabled: true
+net:
+  bindIp: 127.0.0.1
+  port: 27017
+setParameter:
+  enableLocalhostAuthBypass: false
