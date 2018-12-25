@@ -1,9 +1,15 @@
-# The project virtual environment
+# Ignore the project virtual environment
 score-bot-ve
+
+# Ignore the secrets file, used to hold sensitive information
+Secrets.py
 
 # Ignore the database files, excluding the config file
 mongodb/*
 !mongodb/config.yaml
+
+# Ignore all the compiled python files
+*.pyc
 
 # DEFAULT JETBRAINS GITIGNORE START
 
