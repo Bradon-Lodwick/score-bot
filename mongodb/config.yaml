@@ -2,11 +2,11 @@
 systemLog:
   destination: file
   # TODO change the path to your desired log file location
-  path: "C:\\Users\\100585662\\Documents\\score-bot\\mongodb\\score_bot.log"
+  path: "D:\\Enraged Cucco\\Documents\\score-bot\\mongodb\\score_bot.log"
   logAppend: true
 storage:
   # TODO change the path to your desired file storage location, and create the folder that you are pointing to
-  dbPath: "C:\\Users\\100585662\\Documents\\score-bot\\mongodb\\score_data"
+  dbPath: "D:\\Enraged Cucco\\Documents\\score-bot\\mongodb\\score_data"
   journal:
     enabled: true
 net:

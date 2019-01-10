@@ -37,27 +37,40 @@ class DatabaseHelper:
     Attributes:
         client (:obj: `pymongo.MongoClient`): The client connection to the database.
         db: The database that holds the scores.
-        points_col: The collection that holds all points.
-        guild_col: The collection that holds all the guilds and the members within them.
+        guilds_coll: The collection that holds all the guild settings.
+        members_coll: The collection that holds all the members and their scores within their server.
 
     Data Structure
     ==============
+    guilds:
     {
-        _id: discord_guild_id (str)
-        admin_role: discord_role_id (str)
+        _id: discord_guild_id (str),
+        admin_role: discord_role_id (str),
         judge_role: discord_role_id (str)
-        members:
+    }
+
+    members:
+    {
+        _id: discord_member_id (str),
+        total_score: int,
+        guilds:
         [
             {
-                member_id: discord_member_id (str)
-                received_total: int
-                sender_total: int
+                id: discord_guild_id,
+                overall_score: int,
                 category:
                 [
                     {
-                        name: str
-                        received_points: int
-                        sent_points: int
+                        name: str,
+                        score: int
+                    }
+                ],
+                points:
+                [
+                    {
+                        sender: discord_member_id,
+                        category: str,
+                        value: int
                     }
                 ]
             }
@@ -67,19 +80,33 @@ class DatabaseHelper:
 
     # CONSTANTS START
     DB_NAME = "scoredb"
+
     # COLLECTION CONSTANTS START
+    # GUILDS COLLECTION START
     GUILDS_COLLECTION = "guilds"
     GUILDS_ID = "_id"
     GUILDS_ADMIN = "admin_role"
     GUILDS_JUDGE = "judge_role"
-    GUILDS_MEMBERS = "members"
-    MEMBERS_ID = "member_id"
-    MEMBERS_RECEIVED_TOTAL = "received_total"
-    MEMBERS_SENDER_TOTAL = "sender_total"
-    MEMBERS_CATEGORY = "category"
-    CATEGORY_NAME = "name"
-    CATEGORY_RECEIVED_POINTS = "received_points"
-    CATEGORY_SENT_POINTS = "sent_points"
+    # GUILDS COLLECTION END
+
+    # MEMBER COLLECTION START
+    MEMBERS_COLLECTION = "members"
+    MEMBERS_ID = "_id"
+    MEMBERS_TOTAL = "total_score"
+
+    MEMBERS_GUILDS = "guilds"
+    MEMBERS_GUILD_ID = "guild_id"
+    MEMBERS_GUILD_SCORE = "overall_score"
+
+    MEMBERS_GUILD_CATEGORY = "category"
+    MEMBERS_GUILD_CATEGORY_NAME = "name"
+    MEMBERS_GUILD_CATEGORY_SCORE = "score"
+
+    MEMBERS_POINTS = "points"
+    MEMBERS_POINT_SENDER = "sender"
+    MEMBERS_POINT_CATEGORY = "category"
+    MEMBERS_POINT_VALUE = "value"
+    # MEMBER COLLECTION END
     # COLLECTION CONSTANTS END
     # CONSTANTS END
 
@@ -93,6 +120,7 @@ class DatabaseHelper:
         self.client = MongoClient(host, port)
         self.db = self.client[self.DB_NAME]
         self.guilds_coll = self.db[self.GUILDS_COLLECTION]
+        self.members_coll = self.db[self.MEMBERS_COLLECTION]
 
     def setup_guild(self, member, guild, admin_role, judge_role):
         """Sets up a guild by providing it with the the role that will have admin rights for the bot and the role
@@ -147,14 +175,14 @@ class DatabaseHelper:
         # Check if user is apart of the admin role
         else:
             # Get the guild's admin role
-            guild_query = self.guilds_coll.find_one(
+            cursor = self.guilds_coll.find_one(
                 {self.GUILDS_ID: guild.id}, {self.GUILDS_ADMIN: 1, self.GUILDS_ID: 0})
             # If the admin role is set, then check to see if it is in the member's role list
-            if guild_query is not None and guild_query[self.GUILDS_ADMIN] is not None:
-                # Loop through the users roles, and check to see if they match the role id
+            if cursor is not None and cursor[self.GUILDS_ADMIN] is not None:
+                # Loop through the member's roles, and check to see if they match the role id
                 for role in member.roles:
                     # Return True if the member is apart of the admin role
-                    if role.id == guild_query[self.GUILDS_ADMIN]:
+                    if role.id == cursor[self.GUILDS_ADMIN]:
                         return True
             # All checks have failed, they are not authorized
             else:
@@ -180,15 +208,15 @@ class DatabaseHelper:
         # Check if user is apart of the judge role
         else:
             # Get the guild's admin role
-            guild_query = self.guilds_coll.find_one(
+            cursor = self.guilds_coll.find_one(
                 {self.GUILDS_ID: guild.id}, {self.GUILDS_JUDGE: 1, self.GUILDS_ID: 0})
-            if guild_query is not None:
+            if cursor is not None:
                 # If the judge role is set, then check to see if it is in the member's role list
-                if guild_query[self.GUILDS_JUDGE] is not None:
+                if cursor[self.GUILDS_JUDGE] is not None:
                     # Loop through the users roles, and check to see if they match the role id
                     for role in member.roles:
                         # Return True if the member is apart of the judge role
-                        if role.id == guild_query[self.GUILDS_JUDGE]:
+                        if role.id == cursor[self.GUILDS_JUDGE]:
                             return True
                 # If no judge is set, then anyone can give a point
                 else:
@@ -197,7 +225,7 @@ class DatabaseHelper:
             else:
                 return False
 
-    def give_point(self, guild, sender, receiver, category=None, value=1):
+    def give_point(self, guild, sender, receiver, category="general", value=1):
         """Gives a point to a member.
 
         Parameters
@@ -218,25 +246,56 @@ class DatabaseHelper:
             return Results.UNAUTHORIZED
         # Give the member the point
         else:
-            # Overall point increment
-            receiver_overall_update = {"$inc": {"{}.$.{}".format(self.GUILDS_MEMBERS, self.MEMBERS_RECEIVED_TOTAL)}}
-            self.guilds_coll.update({self.MEMBERS_ID: receiver.id}, receiver_overall_update)
-            sender_overall_update = {"$inc": {"{}.$.{}".format(self.GUILDS_MEMBERS, self.MEMBERS_SENDER_TOTAL)}}
-            self.guilds_coll.update({self.MEMBERS_ID: sender.id}, sender_overall_update)
-            # Category increments if the category was given
-            if category is not None:
-                receiver_category_update = {
-                    "$inc": {"{}.$.{}.{}".format(
-                        self.GUILDS_MEMBERS, self.MEMBERS_CATEGORY, self.CATEGORY_RECEIVED_POINTS)}
+            # Test to make sure the member is in the database, and set default values as needed
+            # Insert the member and the guild
+            member_query = {
+                self.MEMBERS_ID: receiver.id
+            }
+            member_update = {
+                "$setOnInsert": {
+                    self.MEMBERS_TOTAL: 0,
+                    self.MEMBERS_GUILDS: [{
+                        self.MEMBERS_GUILD_ID: guild.id,
+                        self.MEMBERS_GUILD_SCORE: 0,
+                        self.MEMBERS_GUILD_CATEGORY: [{
+                            self.MEMBERS_GUILD_CATEGORY_NAME: category,
+                            self.MEMBERS_GUILD_CATEGORY_SCORE: 0
+                        }]
+                    }]
                 }
-                self.guilds_coll.update({self.MEMBERS_ID: receiver.id}, receiver_category_update)
-                sender_category_update = {
-                    "$inc": {"{}.$.{}.{}".format(
-                        self.GUILDS_MEMBERS, self.MEMBERS_CATEGORY, self.CATEGORY_SENT_POINTS)}
-                }
-                self.guilds_coll.update({self.MEMBERS_ID: receiver.id}, sender_category_update)
+            }
+            self.members_coll.update_one(
+                member_query,
+                member_update,
+                upsert=True
+            )
 
-            return Results.SUCCESS
+            # Create the point to be inserted
+            point = {
+                self.MEMBERS_POINT_SENDER: sender.id,
+                self.MEMBERS_POINT_CATEGORY: category,
+                self.MEMBERS_POINT_VALUE: value
+            }
+
+            # The filter that specifies which member, guild, and category to push to
+            query_filter = {
+                self.MEMBERS_ID: receiver.id,
+                "{}.{}".format(self.MEMBERS_GUILDS, self.MEMBERS_GUILD_ID): guild.id,
+                "{}.{}.{}".format(self.MEMBERS_GUILDS, self.MEMBERS_GUILD_CATEGORY, self.MEMBERS_GUILD_CATEGORY_NAME):
+                    category
+            }
+            # The dictionary holding all required updates
+            update = {
+                "$push": {
+                    "{}.$.{}".format(self.MEMBERS_GUILDS, self.MEMBERS_POINTS): point
+                },
+                "$inc": {
+                    "{}.$.{}".format(self.MEMBERS_GUILDS, self.MEMBERS_GUILD_SCORE): value,
+                    "{}.$.{}.{}".format(self.MEMBERS_GUILDS, self.MEMBERS_GUILD_CATEGORY, self.MEMBERS_GUILD_SCORE): value
+                }
+            }
+
+            self.members_coll.update_one(query_filter, update)
 
     def check_score(self, guild, member, category=None):
         """Checks for the member's score in a given category, or their overall score if the category is not given.
@@ -252,24 +311,19 @@ class DatabaseHelper:
         int: The score of the member
         """
 
-        # Perform different queries based on category, but you need to specify the member and server each time
-        filter = {
-            self.GUILDS_ID: guild.id,
-            "{}.$.{}".format(self.GUILDS_MEMBERS, self.MEMBERS_ID): member.id
+        # Setup the base query
+        query = {
+            self.MEMBERS_ID: member.id,
+            "{}.{}".format(self.MEMBERS_GUILDS, self.MEMBERS_GUILD_ID): guild.id
         }
-        if category is not None:
-            filter["{}.$.{}.$.{}".format(self.GUILDS_MEMBERS, self.MEMBERS_CATEGORY, self.CATEGORY_NAME)] = category
-            return_params = {
-                self.GUILDS_ID: 0,
-                "{}.$.{}.$.{}".format(self.GUILDS_MEMBERS, self.MEMBERS_CATEGORY, self.CATEGORY_RECEIVED_POINTS): 1
-            }
-        else:
-            return_params = {
-                self.GUILDS_ID: 0,
-                "{}.$.{}".format(self.GUILDS_MEMBERS, self.MEMBERS_RECEIVED_TOTAL): 1
-            }
-        # Perform the query
-        query = self.guilds_coll.find_one(filter, return_params)
 
-        # TODO change the return value
-        return "TODO"
+        # Check if the overall score or category score should be queried
+        if category is not None:
+            # Checks for category score
+            query["{}.{}".format(self.MEMBERS_GUILDS, self.MEMBERS_GUILD_CATEGORY)] = category
+            cursor = self.members_coll.find_one(query)
+            return 0
+        else:
+            # Checks for overall score
+            cursor = self.members_coll.find_one(query)
+            return 0

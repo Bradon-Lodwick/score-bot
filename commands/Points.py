@@ -29,24 +29,7 @@ class Points:
         """Gives a point to the specified user.
         Example use: s!give_point 3 meme @Score Bot"""
 
-        # Check to make sure only 1 member was mentioned
-        if len(ctx.message.mentions) != 1:
-            await ctx.message.channel.send("You must specify 1 and only 1 person to receive the message by mentioning "
-                                           "them.")
-            return
-        # Set the receiver to the mentioned member
-        else:
-            receiver = ctx.message.mentions[0]
-
-        result = self.db.give_point(ctx.guild, ctx.author, receiver, category=category, value=value)
-        if result == Results.UNAUTHORIZED:
-            await ctx.message.channel.send("You are unauthorized to give users points! You must be an admin or apart "
-                                           "of the server's judge role.")
-        elif result == Results.ERROR:
-            await ctx.message.channel.send("There was an error giving your point.")
-        elif result == Results.SUCCESS:
-            await ctx.message.channel.send("Congrats {}, you got {} points in the {} category!"
-                                           .format(receiver.mention, value, category))
+        pass
 
 
 def setup(bot):
